@@ -18,6 +18,10 @@ WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
 # simple while still allowing an override in deployment environments.
 PORT = int(os.getenv("PORT", "8000"))
 
+# DB_PATH points to the SQLite database file used for local persistence. During
+# the early phases we keep this simple with a single file database.
+DB_PATH = os.getenv("DB_PATH", "data/gringotts.db")
+
 # Fail fast during startup if required configuration is missing. This is better
 # than letting the application run partially configured and fail later when it
 # tries to contact Telegram.
