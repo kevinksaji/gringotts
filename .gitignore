@@ -18,6 +18,10 @@ build/
 dist/
 *.egg-info/
 
+# Local SQLite data
+data/
+*.db
+
 # Editor and OS files
 .vscode/
 .idea/
