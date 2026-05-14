@@ -10,6 +10,7 @@ The current codebase is in the early setup stage. Right now it provides:
 - A minimal `/start` command to verify the bot wiring end to end
 - Automatic SQLite database initialization with the initial project schema
 - A pure Python ledger service for expense validation, balances, and settlement suggestions
+- Telegram trip, member, expense, and balance flows backed by repositories
 
 ## Tech Stack
 
@@ -25,18 +26,35 @@ The current codebase is in the early setup stage. Right now it provides:
 ```text
 gringotts/
 ├── app/
-│   ├── bot_handlers.py
 │   ├── config.py
 │   ├── db.py
+│   ├── handlers/
+│   │   ├── common.py
+│   │   ├── expense_handlers.py
+│   │   └── trip_handlers.py
 │   ├── main.py
+│   ├── models/
+│   │   └── ledger.py
 │   ├── ngrok_utils.py
+│   ├── repositories/
+│   │   ├── expense_repository.py
+│   │   ├── trip_repository.py
+│   │   └── user_repository.py
 │   └── services/
 │       └── ledger_service.py
 ├── tests/
 │   └── test_ledger_service.py
+│   └── test_repositories.py
 ├── requirements.txt
 └── README.md
 ```
+
+The current layering is:
+
+- `app/models` for domain types
+- `app/services` for business rules and calculations
+- `app/repositories` for SQLite persistence
+- `app/handlers` for Telegram transport flow
 
 ## Current Status
 
@@ -47,7 +65,7 @@ gringotts/
 | Phase 1 | Bot setup, env loading, basic command wiring | Complete    |
 | Phase 2 | SQLite setup and schema creation             | Complete    |
 | Phase 3 | Ledger logic and balance calculation         | Complete    |
-| Phase 4 | Telegram conversation flows                  | Not started |
+| Phase 4 | Telegram conversation flows                  | Complete    |
 | Phase 5 | Excel export                                 | Not started |
 | Phase 6 | Settlements, editing, polish                 | Not started |
 
@@ -257,6 +275,38 @@ schema and the later Telegram conversation flows.
 - Settlements are separate ledger events, not edits to historical expenses.
 - The ledger logic is isolated from Telegram handlers so it can be tested directly.
 
+## Phase 4: Bot Flows And Repositories
+
+Phase 4 connects the ledger logic to the Telegram bot and adds a concrete
+repository layer for SQLite persistence.
+
+### Files Added Or Updated
+
+- `app/repositories/user_repository.py`
+- `app/repositories/trip_repository.py`
+- `app/repositories/expense_repository.py`
+- `app/bot_handlers.py`
+- `app/main.py`
+- `tests/test_repositories.py`
+
+### What Phase 4 Achieves
+
+- `/newtrip` creates a trip and makes it active for the current user.
+- `/mytrips` lists the current user's trips.
+- `/addmember` adds a replied-to Telegram user into a trip.
+- `/addexpense` records a simple equal-split expense with one payer across all trip members.
+- `/balance` and `/summary` show current net balances and suggested settlements.
+
+### Current Scope Of The Expense Flow
+
+The implemented expense flow is intentionally narrow:
+
+- one payer
+- equal split
+- all current trip members participate
+
+That keeps the Telegram integration simple while the repository and ledger layers settle into place.
+
 ## Install And Run
 
 ### 1. Create a virtual environment
@@ -309,7 +359,7 @@ Telegram must reach a public HTTPS URL when using webhooks. Since local developm
 
 ## Next Phase
 
-Phase 4 will wire the ledger service into Telegram conversation flows for creating trips, adding members, recording expenses, and showing balances.
+Phase 5 will add Excel export and reporting from the stored trip ledger.
 
 ## Updating This README
 

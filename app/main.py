@@ -3,10 +3,25 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, HTTPException
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler
+from telegram.ext import ApplicationBuilder, CommandHandler, ConversationHandler, MessageHandler, filters
 
 from app.config import BOT_TOKEN, DB_PATH, WEBHOOK_SECRET
-from app.bot_handlers import start
+from app.handlers import (
+    ADD_EXPENSE_TITLE,
+    ADD_EXPENSE_TOTAL,
+    NEW_TRIP_NAME,
+    add_expense_start,
+    add_expense_title,
+    add_expense_total,
+    add_member,
+    balance,
+    cancel,
+    my_trips,
+    new_trip_name,
+    new_trip_start,
+    start,
+    summary,
+)
 from app.db import init_db
 from app.ngrok_utils import get_ngrok_https_url
 
@@ -30,9 +45,30 @@ logger = logging.getLogger(__name__)
 if BOT_TOKEN:
     telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # A CommandHandler wires the /start Telegram command to the async function
-    # defined in app.bot_handlers.start.
     telegram_app.add_handler(CommandHandler("start", start))
+    telegram_app.add_handler(CommandHandler("mytrips", my_trips))
+    telegram_app.add_handler(CommandHandler("addmember", add_member))
+    telegram_app.add_handler(CommandHandler("balance", balance))
+    telegram_app.add_handler(CommandHandler("summary", summary))
+    telegram_app.add_handler(
+        ConversationHandler(
+            entry_points=[CommandHandler("newtrip", new_trip_start)],
+            states={
+                NEW_TRIP_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, new_trip_name)],
+            },
+            fallbacks=[CommandHandler("cancel", cancel)],
+        )
+    )
+    telegram_app.add_handler(
+        ConversationHandler(
+            entry_points=[CommandHandler("addexpense", add_expense_start)],
+            states={
+                ADD_EXPENSE_TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_expense_title)],
+                ADD_EXPENSE_TOTAL: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_expense_total)],
+            },
+            fallbacks=[CommandHandler("cancel", cancel)],
+        )
+    )
 
 
 @asynccontextmanager
