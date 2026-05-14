@@ -9,6 +9,7 @@ The current codebase is in the early setup stage. Right now it provides:
 - An ngrok-based helper flow so Telegram can reach a local machine during development
 - A minimal `/start` command to verify the bot wiring end to end
 - Automatic SQLite database initialization with the initial project schema
+- A pure Python ledger service for expense validation, balances, and settlement suggestions
 
 ## Tech Stack
 
@@ -26,8 +27,13 @@ gringotts/
 ├── app/
 │   ├── bot_handlers.py
 │   ├── config.py
+│   ├── db.py
 │   ├── main.py
-│   └── ngrok_utils.py
+│   ├── ngrok_utils.py
+│   └── services/
+│       └── ledger_service.py
+├── tests/
+│   └── test_ledger_service.py
 ├── requirements.txt
 └── README.md
 ```
@@ -40,7 +46,7 @@ gringotts/
 | :------ | :------------------------------------------- | :---------- |
 | Phase 1 | Bot setup, env loading, basic command wiring | Complete    |
 | Phase 2 | SQLite setup and schema creation             | Complete    |
-| Phase 3 | Ledger logic and balance calculation         | Not started |
+| Phase 3 | Ledger logic and balance calculation         | Complete    |
 | Phase 4 | Telegram conversation flows                  | Not started |
 | Phase 5 | Excel export                                 | Not started |
 | Phase 6 | Settlements, editing, polish                 | Not started |
@@ -226,6 +232,31 @@ Notes:
 - `PORT` defaults to `8000` if omitted.
 - `DB_PATH` defaults to `data/gringotts.db` if omitted.
 
+## Phase 3: Ledger Logic
+
+Phase 3 adds the pure Python business-logic layer that sits between the database
+schema and the later Telegram conversation flows.
+
+### Files Added Or Updated
+
+- `app/services/ledger_service.py` contains the ledger validation and balance logic.
+- `tests/test_ledger_service.py` covers the main expense and settlement cases.
+
+### What Phase 3 Achieves
+
+- Equal split share generation.
+- Custom split share normalization.
+- Cross-row expense validation.
+- Per-member balance calculation across expenses and settlements.
+- Greedy settlement suggestions for the current net balances.
+
+### Core Phase 3 Rules
+
+- For every expense, total paid must equal total owed.
+- Net balances across the whole trip must sum to zero.
+- Settlements are separate ledger events, not edits to historical expenses.
+- The ledger logic is isolated from Telegram handlers so it can be tested directly.
+
 ## Install And Run
 
 ### 1. Create a virtual environment
@@ -278,7 +309,7 @@ Telegram must reach a public HTTPS URL when using webhooks. Since local developm
 
 ## Next Phase
 
-Phase 3 will add the ledger logic layer: expense validation, split calculations, balances, and settlement suggestions.
+Phase 4 will wire the ledger service into Telegram conversation flows for creating trips, adding members, recording expenses, and showing balances.
 
 ## Updating This README
 
