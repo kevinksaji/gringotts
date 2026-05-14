@@ -5,8 +5,9 @@ from fastapi import FastAPI, Request, HTTPException
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler
 
-from app.config import BOT_TOKEN, WEBHOOK_SECRET
+from app.config import BOT_TOKEN, DB_PATH, WEBHOOK_SECRET
 from app.bot_handlers import start
+from app.db import init_db
 from app.ngrok_utils import get_ngrok_https_url
 
 # Configure application-wide logging early so startup, webhook activity, and
@@ -39,6 +40,9 @@ async def lifespan(app: FastAPI):
     # FastAPI lifespan runs once when the server starts and once when it shuts
     # down. This is the right place to initialize Telegram resources that should
     # exist for the whole lifetime of the web server.
+    init_db(DB_PATH)
+    logger.info("Database initialized at %s", DB_PATH)
+
     await telegram_app.initialize()
     await telegram_app.start()
     logger.info("Telegram application initialized")

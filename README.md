@@ -8,6 +8,7 @@ The current codebase is in the early setup stage. Right now it provides:
 - A FastAPI server to receive Telegram webhook updates locally
 - An ngrok-based helper flow so Telegram can reach a local machine during development
 - A minimal `/start` command to verify the bot wiring end to end
+- Automatic SQLite database initialization with the initial project schema
 
 ## Tech Stack
 
@@ -38,7 +39,7 @@ gringotts/
 | Phase   | Goal                                         | Status      |
 | :------ | :------------------------------------------- | :---------- |
 | Phase 1 | Bot setup, env loading, basic command wiring | Complete    |
-| Phase 2 | SQLite setup and schema creation             | Not started |
+| Phase 2 | SQLite setup and schema creation             | Complete    |
 | Phase 3 | Ledger logic and balance calculation         | Not started |
 | Phase 4 | Telegram conversation flows                  | Not started |
 | Phase 5 | Excel export                                 | Not started |
@@ -59,12 +60,13 @@ One operational note: if startup fails with `address already in use`, that is no
 ## How The Current App Works
 
 1. `app/config.py` loads environment variables.
-2. `app/main.py` builds the Telegram application.
-3. FastAPI exposes a health route and a Telegram webhook route.
-4. `app/ngrok_utils.py` fetches the public ngrok HTTPS URL.
-5. On startup, the app registers the webhook with Telegram.
-6. Telegram sends updates to the webhook endpoint.
-7. `app/bot_handlers.py` contains the `/start` command handler.
+2. `app/main.py` initializes the SQLite database during startup.
+3. `app/main.py` builds the Telegram application.
+4. FastAPI exposes a health route and a Telegram webhook route.
+5. `app/ngrok_utils.py` fetches the public ngrok HTTPS URL.
+6. On startup, the app registers the webhook with Telegram.
+7. Telegram sends updates to the webhook endpoint.
+8. `app/bot_handlers.py` contains the `/start` command handler.
 
 ## Webhook Flow Diagram
 
@@ -86,6 +88,126 @@ You can think about it in two halves:
 - Incoming path: Telegram sends the webhook request to ngrok, and ngrok forwards it to your local FastAPI app.
 - Outgoing path: your bot code uses the Telegram Bot API to send a reply back through Telegram's servers to the user.
 
+## Phase 2: Database Setup
+
+Phase 2 adds the first persistent storage layer using SQLite.
+
+### Files Added Or Updated
+
+- `app/db.py` contains database initialization helpers and the initial schema.
+- `app/config.py` now exposes `DB_PATH`.
+- `app/main.py` now initializes the database during application startup.
+
+### Current Database Tables
+
+- `users`
+- `trips`
+- `trip_members`
+- `expenses`
+- `expense_payers`
+- `expense_shares`
+- `settlements`
+
+### What Phase 2 Achieves
+
+- The SQLite database file is created automatically if it does not exist.
+- The schema is created automatically on startup.
+- The project now has persistent tables ready for trips, members, expenses, and settlements.
+
+### Schema Design Notes
+
+The schema is now tightened around the travel-ledger requirements we discussed earlier.
+
+- Money is stored as integer cents instead of floating point values.
+- `expense_payers` and `expense_shares` include `trip_id` so the database can enforce that those users belong to the same trip.
+- Each user can appear only once per expense in `expense_payers` and `expense_shares`.
+- `expenses` includes `expense_date` separately from `created_at` so the date of the real-world expense is not forced to equal the entry timestamp.
+- Right now the project assumes a fresh local SQLite database and recreates the schema cleanly during setup.
+
+### ER Diagram
+
+This diagram shows the current database structure and how the main ledger records relate to each other.
+
+```mermaid
+erDiagram
+	USERS {
+		int id PK
+		int telegram_user_id UK
+		string username
+		string display_name
+		datetime created_at
+	}
+
+	TRIPS {
+		int id PK
+		string name
+		string currency
+		string status
+		int created_by_user_id FK
+		datetime created_at
+	}
+
+	TRIP_MEMBERS {
+		int id PK
+		int trip_id FK
+		int user_id FK
+		datetime joined_at
+	}
+
+	EXPENSES {
+		int id PK
+		int trip_id FK
+		string title
+		string category
+		int total_amount_cents
+		string split_type
+		string notes
+		date expense_date
+		int created_by_user_id FK
+		datetime created_at
+	}
+
+	EXPENSE_PAYERS {
+		int id PK
+		int expense_id FK
+		int trip_id FK
+		int user_id FK
+		int amount_paid_cents
+	}
+
+	EXPENSE_SHARES {
+		int id PK
+		int expense_id FK
+		int trip_id FK
+		int user_id FK
+		int amount_owed_cents
+	}
+
+	SETTLEMENTS {
+		int id PK
+		int trip_id FK
+		int from_user_id FK
+		int to_user_id FK
+		int amount_cents
+		string note
+		datetime created_at
+	}
+
+	USERS ||--o{ TRIPS : creates
+	USERS ||--o{ TRIP_MEMBERS : joins
+	TRIPS ||--o{ TRIP_MEMBERS : has
+	TRIPS ||--o{ EXPENSES : contains
+	USERS ||--o{ EXPENSES : records
+	EXPENSES ||--o{ EXPENSE_PAYERS : paid_by
+	EXPENSES ||--o{ EXPENSE_SHARES : allocated_to
+	TRIPS ||--o{ EXPENSE_PAYERS : scoped_to
+	TRIPS ||--o{ EXPENSE_SHARES : scoped_to
+	USERS ||--o{ EXPENSE_PAYERS : contributes
+	USERS ||--o{ EXPENSE_SHARES : owes
+	TRIPS ||--o{ SETTLEMENTS : has
+	USERS ||--o{ SETTLEMENTS : sends_or_receives
+```
+
 ## Environment Variables
 
 Create a `.env` file in the project root with:
@@ -94,6 +216,7 @@ Create a `.env` file in the project root with:
 BOT_TOKEN=your_telegram_bot_token
 WEBHOOK_SECRET=your_random_secret_string
 PORT=8000
+DB_PATH=data/gringotts.db
 ```
 
 Notes:
@@ -101,6 +224,7 @@ Notes:
 - `BOT_TOKEN` is the token from BotFather.
 - `WEBHOOK_SECRET` is used in the webhook URL path so random internet traffic does not hit a predictable Telegram route.
 - `PORT` defaults to `8000` if omitted.
+- `DB_PATH` defaults to `data/gringotts.db` if omitted.
 
 ## Install And Run
 
@@ -154,7 +278,7 @@ Telegram must reach a public HTTPS URL when using webhooks. Since local developm
 
 ## Next Phase
 
-Phase 2 will add SQLite initialization and the first version of the database schema for trips, members, expenses, payers, shares, and settlements.
+Phase 3 will add the ledger logic layer: expense validation, split calculations, balances, and settlement suggestions.
 
 ## Updating This README
 
