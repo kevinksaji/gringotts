@@ -1,3 +1,5 @@
-python-telegram-bot 
+python-telegram-bot # for bot objects and handlers
 openpyxl 
-python-dotenv
+python-dotenv # for .env loading
+fastapi # local webhook HTTP server
+uvicorn # to run the ASGI server

@@ -1,27 +1,98 @@
+import logging
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, Request, HTTPException
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler
 
-from config import BOT_TOKEN
+from app.config import BOT_TOKEN, DB_PATH, WEBHOOK_SECRET
+from app.bot_handlers import start
+from app.db import init_db
+from app.ngrok_utils import get_ngrok_https_url
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user = update.effective_user
-    name = user.first_name if user else "there"
-    if update.message:
-        await update.message.reply_text(
-            f"Hello {name}! Gringotts is open for business."
-        )
+# Configure application-wide logging early so startup, webhook activity, and
+# failures all produce consistent output in the terminal.
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+)
 
-def main() -> None:
-    if not BOT_TOKEN:
-        raise ValueError("BOT_TOKEN is not set")
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
+# The Telegram stack uses httpx/httpcore underneath. Lowering these loggers to
+# WARNING keeps the console readable by hiding repetitive request-level logs.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
-    app.add_handler(CommandHandler("start", start))
+logger = logging.getLogger(__name__)
 
-    print("Gringotts is open for business.")
+# Build the Telegram application object once during module import. This object
+# is responsible for handler registration, update processing, bot access, and
+# lifecycle methods such as initialize/start/stop.
+if BOT_TOKEN:
+    telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    app.run_polling()
+    # A CommandHandler wires the /start Telegram command to the async function
+    # defined in app.bot_handlers.start.
+    telegram_app.add_handler(CommandHandler("start", start))
 
 
-if __name__ == "__main__":
-    main()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # FastAPI lifespan runs once when the server starts and once when it shuts
+    # down. This is the right place to initialize Telegram resources that should
+    # exist for the whole lifetime of the web server.
+    init_db(DB_PATH)
+    logger.info("Database initialized at %s", DB_PATH)
+
+    await telegram_app.initialize()
+    await telegram_app.start()
+    logger.info("Telegram application initialized")
+
+    # Resolve the current public ngrok URL and combine it with the secret path.
+    # This produces the exact webhook URL Telegram should send updates to.
+    ngrok_url = get_ngrok_https_url()
+    webhook_url = f"{ngrok_url}/telegram/{WEBHOOK_SECRET}"
+
+    # Register the webhook with Telegram so future messages are delivered to our
+    # FastAPI endpoint instead of being pulled via long polling.
+    await telegram_app.bot.set_webhook(url=webhook_url)
+    logger.info("Webhook set to %s", webhook_url)
+
+    try:
+        yield
+    finally:
+        # Clean shutdown matters. Deleting the webhook and stopping the Telegram
+        # app prevents stale configuration and releases library resources.
+        await telegram_app.bot.delete_webhook()
+        await telegram_app.stop()
+        await telegram_app.shutdown()
+        logger.info("Telegram application stopped")
+
+
+# FastAPI is only serving HTTP routes here. The Telegram bot logic still lives
+# inside python-telegram-bot; FastAPI just gives Telegram a webhook target.
+app = FastAPI(lifespan=lifespan)
+
+
+@app.get("/")
+async def healthcheck():
+    # Simple route for checking whether the web server is alive.
+    return {"status": "ok"}
+
+
+@app.post(f"/telegram/{WEBHOOK_SECRET}")
+async def telegram_webhook(request: Request):
+    try:
+        # Telegram sends JSON payloads describing updates. We parse that payload
+        # and convert it into the library's Update object.
+        data = await request.json()
+        update = Update.de_json(data, telegram_app.bot)
+
+        # Hand the update to the Telegram application so it can route the event
+        # through registered handlers like CommandHandler("start", start).
+        await telegram_app.process_update(update)
+        return {"ok": True}
+    except Exception as e:
+        # Log the full stack trace server-side, but return a generic HTTP error
+        # response to the caller.
+        logger.exception("Failed to process update")
+        raise HTTPException(status_code=500, detail="update processing failed") from e
