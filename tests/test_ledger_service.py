@@ -1,11 +1,7 @@
 import unittest
 
+from app.models.ledger import Contribution, ExpenseRecord, LedgerValidationError, SettlementRecord, Share
 from app.services.ledger_service import (
-    Contribution,
-    ExpenseRecord,
-    LedgerValidationError,
-    SettlementRecord,
-    Share,
     build_custom_shares,
     build_equal_shares,
     calculate_member_balances,
