@@ -1,69 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Iterable, Mapping, Sequence
 
-
-class LedgerValidationError(ValueError):
-    """Raised when an expense or settlement payload breaks ledger rules."""
-
-
-@dataclass(frozen=True)
-class Contribution:
-    # One payer row for one expense. The amount is stored in cents to match the
-    # database schema and to avoid floating point rounding issues.
-    user_id: int
-    amount_paid_cents: int
-
-
-@dataclass(frozen=True)
-class Share:
-    # One share row for one expense. This represents how much a user consumed
-    # or owes for that expense, not how much they paid upfront.
-    user_id: int
-    amount_owed_cents: int
-
-
-@dataclass(frozen=True)
-class ExpenseRecord:
-    # This mirrors the normalized expense structure in the database: one parent
-    # expense plus payer rows and share rows.
-    trip_id: int
-    total_amount_cents: int
-    split_type: str
-    payers: tuple[Contribution, ...]
-    shares: tuple[Share, ...]
-    title: str | None = None
-    expense_date: str | None = None
-
-
-@dataclass(frozen=True)
-class SettlementRecord:
-    # Settlements are separate ledger events from expenses. They reduce what a
-    # debtor owes and reduce what a creditor should receive.
-    trip_id: int
-    from_user_id: int
-    to_user_id: int
-    amount_cents: int
-
-
-@dataclass(frozen=True)
-class MemberBalance:
-    # These totals make it easier to debug the final net balance for a member.
-    user_id: int
-    total_paid_cents: int
-    total_owed_cents: int
-    settlements_sent_cents: int
-    settlements_received_cents: int
-    net_balance_cents: int
-
-
-@dataclass(frozen=True)
-class SuggestedSettlement:
-    # One recommended transfer produced by the greedy matcher.
-    from_user_id: int
-    to_user_id: int
-    amount_cents: int
+from app.models.ledger import (
+    Contribution,
+    ExpenseRecord,
+    LedgerValidationError,
+    MemberBalance,
+    SettlementRecord,
+    Share,
+    SuggestedSettlement,
+)
 
 
 def build_equal_shares(
