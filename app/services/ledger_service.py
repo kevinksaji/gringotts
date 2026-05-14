@@ -112,7 +112,7 @@ def validate_expense_inputs(
     payers: Sequence[Contribution],
     shares: Sequence[Share],
 ) -> None:
-    # This is the main Phase 3 validator. It checks the cross-row rules that are
+    # This is the main ledger validator. It checks the cross-row rules that are
     # hard or awkward to enforce directly in SQLite.
     _validate_positive_amount(total_amount_cents, "total_amount_cents")
 
